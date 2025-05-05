@@ -7,6 +7,7 @@ export interface ImportInfo {
 export interface Component {
   name: string;
   imports: ImportInfo[];
+  type?: string;
 }
 
 export interface FileAnalysisResult {

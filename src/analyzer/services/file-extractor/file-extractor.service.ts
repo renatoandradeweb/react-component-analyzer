@@ -1,90 +1,72 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { promises as fsPromises } from 'fs';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as unzipper from 'unzipper';
-import { createReadStream } from 'fs';
+import * as fg from 'fast-glob';
 
 @Injectable()
 export class FileExtractorService {
   private readonly logger = new Logger(FileExtractorService.name);
 
-  // Extrai um arquivo ZIP para um diretório temporário
-  async extractZip(zipPath: string): Promise<string> {
-    const extractPath = path.join(process.cwd(), 'temp', `extract_${Date.now()}`);
+  /**
+   * Descompacta o buffer ZIP recebido em um diretório temporário
+   * e retorna o caminho absoluto onde os arquivos foram extraídos.
+   */
+  async extractZip(buffer: Buffer): Promise<string> {
+    const extractRoot = path.join(__dirname, '..', '..', 'temp', `extract_${Date.now()}`);
+    await fsPromises.mkdir(extractRoot, { recursive: true });
 
-    // Garantir que o diretório existe
-    if (!fs.existsSync(path.join(process.cwd(), 'temp'))) {
-      fs.mkdirSync(path.join(process.cwd(), 'temp'));
-    }
-
-    if (!fs.existsSync(extractPath)) {
-      fs.mkdirSync(extractPath, { recursive: true });
-    }
-
-    this.logger.log(`Extraindo arquivo ZIP para ${extractPath}`);
-
-    await createReadStream(zipPath)
-      .pipe(unzipper.Extract({ path: extractPath }))
-      .promise();
-
-    return extractPath;
-  }
-
-  // Encontra todos os arquivos React no diretório extraído
-  findReactFiles(dir: string): string[] {
-    const reactFiles: string[] = [];
-
-    const traverse = (currentDir: string) => {
-      this.logger.log(`Verificando diretório: ${currentDir}`);
-      try {
-        const files = fs.readdirSync(currentDir);
-
-        for (const file of files) {
-          const filePath = path.join(currentDir, file);
-
-          try {
-            const stat = fs.statSync(filePath);
-
-            this.logger.log(`Encontrado: ${filePath}, é diretório: ${stat.isDirectory()}`);
-
-            if (stat.isDirectory() && !file.startsWith('node_modules') && !file.startsWith('.') && !file.startsWith('__MACOSX')) {
-              traverse(filePath);
-            } else if (stat.isFile() && this.isReactFile(file)) {
-              this.logger.log(`Arquivo React encontrado: ${filePath}`);
-              reactFiles.push(filePath);
-            }
-          } catch (error) {
-            this.logger.error(`Erro ao processar o arquivo ${filePath}: ${error.message}`);
-          }
-        }
-      } catch (error) {
-        this.logger.error(`Erro ao ler o diretório ${currentDir}: ${error.message}`);
+    const zipStream = unzipper.Parse();
+    zipStream.on('entry', async entry => {
+      // Ignora diretórios
+      if (entry.type === 'Directory') {
+        entry.autodrain();
+        return;
       }
-    };
+      const filePath = path.join(extractRoot, entry.path);
+      const dir = path.dirname(filePath);
+      await fsPromises.mkdir(dir, { recursive: true });
+      entry.pipe(fs.createWriteStream(filePath));
+    });
+    zipStream.on('error', err => {
+      this.logger.error('Erro ao descompactar ZIP', err);
+      throw err;
+    });
 
-    traverse(dir);
-    this.logger.log(`Total de arquivos React encontrados: ${reactFiles.length}`);
-    return reactFiles;
+    // Iniciar a extração
+    zipStream.end(buffer);
+
+    // Aguarda o término da extração
+    await new Promise<void>(resolve => zipStream.on('close', () => resolve()));
+    this.logger.log(`ZIP extraído em: ${extractRoot}`);
+    return extractRoot;
   }
 
-  // Verifica se o arquivo pode conter componentes React
-  private isReactFile(filename: string): boolean {
-    const extensions = ['.jsx', '.tsx', '.js', '.ts'];
-    const ext = path.extname(filename).toLowerCase();
-    const isReactFile = extensions.includes(ext);
-    if (isReactFile) {
-      this.logger.log(`${filename} é um arquivo React válido`);
-    }
-    return isReactFile;
+  /**
+   * Remove recursivamente o diretório de extração após o processamento.
+   */
+  async cleanupFiles(extractPath: string): Promise<void> {
+    await fsPromises.rm(extractPath, { recursive: true, force: true });
+    this.logger.log(`Diretório removido: ${extractPath}`);
   }
 
-  // Limpa os arquivos temporários
-  cleanupFiles(extractPath: string): void {
-    try {
-      fs.rmSync(extractPath, { recursive: true, force: true });
-      this.logger.log(`Arquivos temporários removidos: ${extractPath}`);
-    } catch (error) {
-      this.logger.error(`Erro ao remover arquivos temporários: ${error.message}`);
-    }
+  /**
+   * Varre recursivamente todo o diretório de extração
+   * e retorna todos os arquivos .js, .jsx, .ts e .tsx encontrados.
+   */
+  async extractFilePaths(extractRoot: string): Promise<string[]> {
+    const pattern = path.join(extractRoot, '**/*.{js,jsx,ts,tsx}');
+    this.logger.log(`Procurando arquivos com o pattern: ${pattern}`);
+
+    // fast-glob aceita array de padrões
+    const files = await fg([pattern], {
+      onlyFiles: true,
+      absolute: true,
+      ignore: ['**/node_modules/**', '**/.*/**'],
+    });
+
+    this.logger.log(`Total de arquivos encontrados: ${files.length}`);
+    return files;
   }
 }

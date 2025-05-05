@@ -3,6 +3,7 @@ export class AnalyzerResultDto {
     path: string;
     components: {
       name: string;
+      type?: string; // Novo campo
       imports: {
         name: string;
         source: string;
