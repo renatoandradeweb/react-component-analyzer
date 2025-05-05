@@ -63,7 +63,7 @@ O projeto expõe um endpoint REST para análise de componentes:
 
 ### Analisar Projeto React
 
-**Endpoint:** `POST /analyzer/upload`
+**Endpoint:** `POST http://localhost:3000/analyzer/upload`
 
 **Parâmetro:**
 - `file`: Arquivo ZIP contendo o projeto React para análise
