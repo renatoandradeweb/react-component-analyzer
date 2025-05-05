@@ -103,6 +103,9 @@ curl -X POST http://localhost:3000/analyzer/upload \
   -F "file=@react-test-project.zip" \
   -o resultado.json
 ```
+Arquivo `resultado.json` conterá a análise do projeto.
+O arquivo de teste `react-test-project.zip` pode ser encontrado na pasta raiz do projeto.
+
 
 ## Possíveis Erros iniciais
 - **Caso dê erro na hora de fazer o upload criar as pastas na raiz do projeto /uploads e /temp**
