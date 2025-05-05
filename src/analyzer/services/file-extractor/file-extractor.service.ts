@@ -56,7 +56,11 @@ export class FileExtractorService {
    * e retorna todos os arquivos .js, .jsx, .ts e .tsx encontrados.
    */
   async extractFilePaths(extractRoot: string): Promise<string[]> {
-    const pattern = path.join(extractRoot, '**/*.{js,jsx,ts,tsx}');
+    const pattern = path.join(
+      extractRoot,
+      '**/*.{js,jsx,ts,tsx,css,scss,sass,less,styl,png,jpg,jpeg,gif,webp,svg,ico,woff,woff2,ttf,eot,json,md,mdx,txt}',
+    );
+
     this.logger.log(`Procurando arquivos com o pattern: ${pattern}`);
 
     // fast-glob aceita array de padrões

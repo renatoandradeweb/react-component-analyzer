@@ -75,21 +75,67 @@ export class AnalyzerService {
   }
 
   private detectFileType(filePath: string): string {
-    const normalizedPath = filePath.replace(/\\/g, '/');
+    const normalized = filePath.replace(/\\/g, '/');
+    const ext = path.extname(normalized).toLowerCase();
+    const fileName = path.basename(normalized).toLowerCase();
 
-    if (normalizedPath.includes('/hooks/')) {
-      return 'hook';
-    } else if (normalizedPath.includes('/pages/')) {
-      return 'page';
-    } else if (normalizedPath.includes('/components/')) {
-      return 'component';
-    } else {
-      const fileName = path.basename(filePath).toLowerCase();
-      if (fileName.includes('config')) {
-        return 'config';
-      }
-      return 'other';
-    }
+    // 1) Pastas semânticas
+    if (normalized.includes('/hooks/')) return 'hook';
+    if (normalized.includes('/pages/')) return 'page';
+    if (normalized.includes('/components/')) return 'component';
+    if (normalized.includes('/services/')) return 'service';
+    if (normalized.includes('/utils/') || normalized.includes('/helpers/'))
+      return 'util';
+    if (normalized.includes('/contexts/')) return 'context';
+    if (normalized.includes('/store/')) return 'store';
+    if (normalized.includes('/tests/') ||
+      normalized.includes('__tests__/') ||
+      fileName.endsWith('.test.js')  ||
+      fileName.endsWith('.spec.js')  ||
+      fileName.endsWith('.test.jsx') ||
+      fileName.endsWith('.spec.jsx') ||
+      fileName.endsWith('.test.ts')  ||
+      fileName.endsWith('.spec.ts')  ||
+      fileName.endsWith('.test.tsx') ||
+      fileName.endsWith('.spec.tsx')) return 'test';
+
+    // 2) Extensões de código
+    if (ext === '.ts' || ext === '.tsx') return 'typescript';
+    if (ext === '.js' || ext === '.jsx') return 'javascript';
+
+    // 3) Estilos
+    if (['.css', '.scss', '.sass', '.less', '.styl'].includes(ext)) return 'style';
+
+    // 4) Assets
+    if (
+      ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico'].includes(ext)
+    )
+      return 'asset';
+    if (['.woff', '.woff2', '.ttf', '.eot'].includes(ext)) return 'font';
+
+    // 5) Configurações e metadados
+    if (
+      fileName === 'package.json' ||
+      fileName === 'tsconfig.json' ||
+      fileName === 'jsconfig.json' ||
+      fileName === '.babelrc' ||
+      fileName === '.eslintrc.js' ||
+      fileName === '.eslintrc.json' ||
+      fileName === '.prettierrc' ||
+      fileName.endsWith('.config.js') ||
+      fileName.endsWith('.config.ts') ||
+      fileName.endsWith('.env')) return 'config';
+
+    // 6) Documentação
+    if (['.md', '.mdx', '.txt'].includes(ext)) return 'doc';
+
+    // 7) Outros
+    if (fileName === 'readme' || fileName.startsWith('readme.')) return 'doc';
+    if (fileName === 'license' || fileName.startsWith('license.')) return 'doc';
+    if (fileName === 'changelog' || fileName.startsWith('changelog.')) return 'doc';
+
+    // fallback
+    return 'other';
   }
 
   // Analisa um único arquivo React
@@ -106,7 +152,12 @@ export class AnalyzerService {
       }
 
       // Detectar componentes
-      const components = this.componentDetectorService.detectComponents(filePath, tree);
+      const components = this.componentDetectorService
+        .detectComponents(filePath, tree)
+        .map(c => ({
+          ...c,
+          type: this.detectFileType(filePath),
+        }));
       fileResult.components = components;
 
       // Analisar importações se houver componentes
