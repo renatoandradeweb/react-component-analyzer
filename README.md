@@ -77,6 +77,7 @@ O projeto expõe um endpoint REST para análise de componentes:
       "components": [
         {
           "name": "ComponentName",
+          "type": "javascript",
           "imports": [
             {
               "name": "React",
