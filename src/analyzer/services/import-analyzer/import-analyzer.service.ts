@@ -9,8 +9,23 @@ export class ImportAnalyzerService {
 
   constructor(private readonly treeSitterService: TreeSitterService) {}
 
+  private addImportIfNotDuplicate(component: Component, importInfo: ImportInfo): void {
+    const isDuplicate = component.imports.some(
+      imp => imp.name === importInfo.name && imp.source === importInfo.source
+    );
+
+    if (!isDuplicate) {
+      component.imports.push(importInfo);
+      this.logger.debug(`Adicionada importação: ${importInfo.name} de ${importInfo.source}`);
+    }
+  }
+
   // Analisa importações em um arquivo
-  analyzeImports(rootNode: any, components: Component[], filePath: string): void {
+  analyzeImports(
+    rootNode: any,
+    components: Component[],
+    filePath: string,
+  ): void {
     try {
       // Verificar se temos um nó válido
       if (!rootNode) {
@@ -22,10 +37,10 @@ export class ImportAnalyzerService {
       const allImports = new Map<string, ImportInfo>();
 
       // Detectar importações nomeadas
-      this.detectNamedImports(rootNode, allImports);
+      this.detectNamedImports(rootNode, allImports, components);
 
       // Detectar importações padrão
-      this.detectDefaultImports(rootNode, allImports);
+      this.detectDefaultImports(rootNode, allImports, components);
 
       // Adicionar importações aos componentes
       for (const component of components) {
@@ -34,13 +49,13 @@ export class ImportAnalyzerService {
           if (allImports.has('React')) {
             const reactImport = allImports.get('React');
             if (reactImport) {
-              component.imports.push(reactImport);
+              this.addImportIfNotDuplicate(component, reactImport);
             }
           }
           if (allImports.has('Component')) {
             const componentImport = allImports.get('Component');
             if (componentImport) {
-              component.imports.push(componentImport);
+              this.addImportIfNotDuplicate(component, componentImport);
             }
           }
         }
@@ -49,7 +64,7 @@ export class ImportAnalyzerService {
         if (allImports.has(component.name)) {
           const componentNameImport = allImports.get(component.name);
           if (componentNameImport) {
-            component.imports.push(componentNameImport);
+            this.addImportIfNotDuplicate(component, componentNameImport);
           }
         }
 
@@ -62,76 +77,11 @@ export class ImportAnalyzerService {
   }
 
   // Detecta importações nomeadas (import { X } from 'source'
-  private detectNamedImports(rootNode: any, allImports: Map<string, ImportInfo>): void {
-    const namedImportQuery = `
-      (import_statement
-        source: (string) @source
-        (import_clause
-          (named_import_specifiers
-            (named_import_specifier
-              name: (identifier) @name))))
-    `;
-
-    try {
-      const captures = this.treeSitterService.executeQuery({ rootNode }, namedImportQuery);
-
-      // Processar as capturas
-      const groups = groupCaptures(captures);
-
-      for (const group of groups) {
-        const source = group.find(c => c.name === 'source')?.node.text.replace(/['"]/g, '');
-
-        for (const capture of group.filter(c => c.name === 'name')) {
-          const name = capture.node.text;
-
-          allImports.set(name, {
-            name,
-            source
-          });
-
-          this.logger.debug(`Importação nomeada detectada: ${name} de ${source}`);
-        }
-      }
-    } catch (error) {
-      this.logger.error(`Erro ao detectar importações nomeadas: ${error.message}`);
-    }
-  }
-
-  // Detecta importações padrão (import X from 'source')
-  private detectDefaultImports(rootNode: any, allImports: Map<string, ImportInfo>): void {
-    const defaultImportQuery = `
-      (import_statement
-        source: (string) @source
-        (import_clause
-          (identifier) @name))
-    `;
-
-    try {
-      const captures = this.treeSitterService.executeQuery({ rootNode }, defaultImportQuery);
-
-      // Processar as capturas
-      const groups = groupCaptures(captures);
-
-      for (const group of groups) {
-        const source = group.find(c => c.name === 'source')?.node.text.replace(/['"]/g, '');
-        const name = group.find(c => c.name === 'name')?.node.text;
-
-        if (name && source) {
-          allImports.set(name, {
-            name,
-            source
-          });
-
-          this.logger.debug(`Importação padrão detectada: ${name} de ${source}`);
-        }
-      }
-    } catch (error) {
-      this.logger.error(`Erro ao detectar importações padrão: ${error.message}`);
-    }
-  }
-
-  // Detecta o uso de componentes dentro do arquivo
-  private detectComponentUsage(rootNode: any, component: Component, allImports: Map<string, ImportInfo>): void {
+  private detectComponentUsage(
+    rootNode: any,
+    component: Component,
+    allImports: Map<string, ImportInfo>,
+  ): void {
     const jsxQuery = `(jsx_opening_element name: (identifier) @tag)`;
 
     try {
@@ -150,15 +100,100 @@ export class ImportAnalyzerService {
 
       // Adicionar componentes usados às importações
       for (const usedComp of usedComponents) {
+        // Em detectComponentUsage:
         if (allImports.has(usedComp)) {
           const usedCompImport = allImports.get(usedComp);
           if (usedCompImport) {
-            component.imports.push(usedCompImport);
+            this.addImportIfNotDuplicate(component, usedCompImport);
           }
         }
       }
     } catch (error) {
-      this.logger.error(`Erro ao detectar uso de componentes: ${error.message}`);
+      this.logger.error(
+        `Erro ao detectar uso de componentes: ${error.message}`,
+      );
+    }
+  }
+
+  // Detecta importações padrão (import X from 'source')
+  private detectDefaultImports(rootNode: any, allImports: Map<string, ImportInfo>, components: Component[]): void {
+    const defaultImportQuery = `
+    (import_statement
+      source: (string) @source
+      (import_clause
+        (identifier) @name))
+  `;
+
+    try {
+      const captures = this.treeSitterService.executeQuery({ rootNode }, defaultImportQuery);
+
+      // Processar as capturas
+      let currentSource = '';
+      let currentName = '';
+
+      for (const capture of captures) {
+        if (capture.name === 'source') {
+          currentSource = capture.node.text.replace(/['"]/g, '');
+        } else if (capture.name === 'name') {
+          currentName = capture.node.text;
+
+          // Em vez de adicionar ao mapa
+          // allImports.set(currentName, { name: currentName, source: currentSource });
+
+          // Adicionar diretamente a todos os componentes
+          for (const component of components) {
+            component.imports.push({
+              name: currentName,
+              source: `import ${currentName} from '${currentSource}'`
+            });
+          }
+
+          this.logger.debug(`Importação padrão detectada: ${currentName} de ${currentSource}`);
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Erro ao detectar importações padrão: ${error.message}`);
+    }
+  }
+
+  private detectNamedImports(rootNode: any, allImports: Map<string, ImportInfo>, components: Component[]): void {
+    const namedImportQuery = `
+    (import_statement
+      source: (string) @source
+      (import_clause
+        (named_import_specifiers
+          (named_import_specifier
+            name: (identifier) @name))))
+  `;
+
+    try {
+      const captures = this.treeSitterService.executeQuery({ rootNode }, namedImportQuery);
+
+      // Processar as capturas
+      let currentSource = '';
+
+      for (const capture of captures) {
+        if (capture.name === 'source') {
+          currentSource = capture.node.text.replace(/['"]/g, '');
+        } else if (capture.name === 'name') {
+          const name = capture.node.text;
+
+          // Em vez de adicionar ao mapa allImports
+          // allImports.set(name, { name, source: currentSource });
+
+          // Adicionar diretamente a todos os componentes
+          for (const component of components) {
+            component.imports.push({
+              name: name,
+              source: `import { ${name} } from '${currentSource}'`
+            });
+          }
+
+          this.logger.debug(`Importação nomeada detectada: ${name} de ${currentSource}`);
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Erro ao detectar importações nomeadas: ${error.message}`);
     }
   }
 }

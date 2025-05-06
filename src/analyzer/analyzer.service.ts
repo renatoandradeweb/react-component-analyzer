@@ -109,15 +109,33 @@ export class AnalyzerService {
     }
   }
 
-  /**
-   * Mapeia o resultado para o DTO
-   */
+  // Mapeia o resultado para o DTO
   private mapToDto(result: AnalyzerResult): AnalyzerResultDto {
     const dto = new AnalyzerResultDto();
-    dto.files = result.files.map(file => ({
-      path: file.filePath,
-      components: file.components,
-    }));
+    dto.files = result.files.map(file => {
+      this.logger.debug(`Arquivo: ${file.filePath}`);
+
+      const components = file.components.map(component => {
+        this.logger.debug(`Componente ${component.name} tem ${component.imports.length} importações:`);
+        component.imports.forEach(imp => {
+          this.logger.debug(`  - ${imp.name} de ${imp.source}`);
+        });
+
+        return {
+          name: component.name,
+          imports: component.imports,
+        };
+      });
+
+      return {
+        path: file.filePath,
+        components
+      };
+    });
+
+    // Log do DTO para verificar se tudo está correto antes de retornar
+    this.logger.debug(`DTO gerado com ${dto.files.length} arquivos`);
+
     return dto;
   }
 }

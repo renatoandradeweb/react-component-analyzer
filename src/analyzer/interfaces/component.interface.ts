@@ -1,6 +1,7 @@
 export interface ImportInfo {
   name: string;
   source: string;
+  id?: string;
 }
 
 export interface Component {

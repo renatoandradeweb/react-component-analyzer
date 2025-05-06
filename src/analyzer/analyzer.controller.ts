@@ -49,13 +49,12 @@ export class AnalyzerController {
       },
     }),
   )
-  async uploadFile(
-    @UploadedFile() file: Express.Multer.File,
-  ): Promise<AnalyzerResultDto> {
-    if (!file) {
-      throw new BadRequestException('Nenhum arquivo foi enviado');
-    }
+  @Post('upload')
+  async uploadFile(@UploadedFile() file: Express.Multer.File): Promise<AnalyzerResultDto> {
+    const result = await this.analyzerService.analyzeProject(file.path);
 
-    return this.analyzerService.analyzeProject(file.path);
+    console.log('JSON final:', JSON.stringify(result, null, 2));
+
+    return result;
   }
 }
